@@ -79,6 +79,7 @@ export interface Chunk {
   cz: number;
   data: Uint8Array;
   generated: boolean;
+  generating: boolean;
 }
 
 function chunkKey(cx: number, cz: number): string {
@@ -109,13 +110,26 @@ export class World {
     return this.chunks.get(chunkKey(cx, cz));
   }
 
+  private generating = false;
+
   ensureChunk(cx: number, cz: number): Chunk {
     const key = chunkKey(cx, cz);
     let c = this.chunks.get(key);
     if (!c) {
-      c = { cx, cz, data: new Uint8Array(CHUNK_SIZE * CHUNK_HEIGHT * CHUNK_SIZE), generated: false };
+      c = { cx, cz, data: new Uint8Array(CHUNK_SIZE * CHUNK_HEIGHT * CHUNK_SIZE), generated: false, generating: false };
       this.chunks.set(key, c);
       this.generateChunk(c);
+    }
+    return c;
+  }
+
+  /** Get-or-create a chunk shell WITHOUT generating terrain. Safe during generation. */
+  private ensureChunkShell(cx: number, cz: number): Chunk {
+    const key = chunkKey(cx, cz);
+    let c = this.chunks.get(key);
+    if (!c) {
+      c = { cx, cz, data: new Uint8Array(CHUNK_SIZE * CHUNK_HEIGHT * CHUNK_SIZE), generated: false, generating: false };
+      this.chunks.set(key, c);
     }
     return c;
   }
@@ -151,17 +165,26 @@ export class World {
     if (y < 0 || y >= CHUNK_HEIGHT) return;
     const cx = Math.floor(x / CHUNK_SIZE);
     const cz = Math.floor(z / CHUNK_SIZE);
-    const c = this.ensureChunk(cx, cz);
+    // During generation, don't trigger neighbor generation — just write the shell.
+    const c = this.generating ? this.ensureChunkShell(cx, cz) : this.ensureChunk(cx, cz);
     const lx = x - cx * CHUNK_SIZE;
     const lz = z - cz * CHUNK_SIZE;
     c.data[this.idx(lx, y, lz)] = getBlockIndex(t);
     this.edits.set(`${x},${y},${z}`, t);
+    if (this.generating && !c.generated) this.trackNeighbor(cx, cz);
   }
 
   /** Set without recording an edit (used during generation). */
   private setGen(c: Chunk, lx: number, y: number, lz: number, t: BlockType) {
     if (y < 0 || y >= CHUNK_HEIGHT) return;
     c.data[this.idx(lx, y, lz)] = getBlockIndex(t);
+  }
+
+  /** Track a neighbor chunk that needs generation after the current one finishes. */
+  private trackNeighbor(cx: number, cz: number) {
+    const k = chunkKey(cx, cz);
+    const c = this.chunks.get(k);
+    if (c && !c.generated && !c.generating) this.pendingNeighbors.add(k);
   }
 
   /** Apply a player edit (from persistence) at load time. */
@@ -191,6 +214,9 @@ export class World {
   }
 
   private generateChunk(c: Chunk) {
+    if (c.generated || c.generating) return;
+    c.generating = true;
+    this.generating = true;
     const baseX = c.cx * CHUNK_SIZE;
     const baseZ = c.cz * CHUNK_SIZE;
     // terrain
@@ -227,6 +253,22 @@ export class World {
     // trees + structures (deterministic per-chunk)
     this.decorateChunk(c);
     c.generated = true;
+    c.generating = false;
+    this.generating = false;
+    // Now generate any neighbor shells we wrote into during decoration.
+    this.flushPendingNeighbors();
+  }
+
+  private pendingNeighbors = new Set<string>();
+  private flushPendingNeighbors() {
+    if (this.pendingNeighbors.size === 0) return;
+    const keys = Array.from(this.pendingNeighbors);
+    this.pendingNeighbors.clear();
+    for (const k of keys) {
+      const [cx, cz] = k.split(',').map(Number);
+      const c = this.chunks.get(k);
+      if (c && !c.generated) this.generateChunk(c);
+    }
   }
 
   private decorateChunk(c: Chunk) {

@@ -19,6 +19,8 @@ import {
   loadPlayerState,
   savePlayerState,
 } from './persistence';
+import { bindEngine, getBoundAPI } from './addons';
+import { dispatchTick, dispatchBlockBreak, dispatchBlockPlace, dispatchPlayerDamage } from './scriptApi';
 
 export type Weather = 'clear' | 'rain' | 'snow';
 
@@ -113,6 +115,9 @@ export class Engine {
 
     this.entities = new EntityManager(this.scene, this.world);
     this.entities.onPlayerDamage = (amount) => this.takeDamage(amount);
+
+    // Bind the addon scripting API to this engine so addon scripts can act on it.
+    bindEngine(this);
 
     // lighting
     this.sun = new THREE.DirectionalLight('#fff6e0', 1.15);
@@ -305,6 +310,7 @@ export class Engine {
     const lz = z - cz * CHUNK_SIZE;
     this.voxels.markDirty(cx, cz, lx === 0 || lx === CHUNK_SIZE - 1 || lz === 0 || lz === CHUNK_SIZE - 1);
     deleteWorldEdit(x, y, z);
+    dispatchBlockBreak(x, y, z, block);
     // drop
     const def = getBlock(block);
     const drop = def?.drop ?? block;
@@ -343,6 +349,7 @@ export class Engine {
     const lz = pz - cz * CHUNK_SIZE;
     this.voxels.markDirty(cx, cz, lx === 0 || lx === CHUNK_SIZE - 1 || lz === 0 || lz === CHUNK_SIZE - 1);
     saveWorldEdit({ x: px, y: py, z: pz, block });
+    dispatchBlockPlace(px, py, pz, block);
     if (!def.infiniteBlocks) {
       this.inventory.consumeSelected();
       this.refreshUI();
@@ -439,6 +446,10 @@ export class Engine {
     this.callbacks.onFoodChange?.(this.food, this.maxFood);
   }
 
+  message(text: string, kind: 'info' | 'error' = 'info') {
+    this.callbacks.onMessage?.(text, kind);
+  }
+
   killNearbyEntities(): number {
     let n = 0;
     for (const e of this.entities.entities) {
@@ -460,6 +471,7 @@ export class Engine {
     if (this.player.invulnerable) return;
     this.health = Math.max(0, this.health - amount);
     this.callbacks.onHealthChange?.(this.health, this.maxHealth);
+    dispatchPlayerDamage(amount);
     if (this.health <= 0) {
       this.die();
     }
@@ -591,6 +603,9 @@ export class Engine {
     // chunk loading around player
     this.updateChunksAroundPlayer();
     this.voxels.update();
+
+    // addon script tick
+    dispatchTick(dt);
 
     // entity respawning near player
     this.entitySpawnTimer += dt;

@@ -609,7 +609,7 @@ function AddonsScreen({
                   <div>
                     <h3 className="font-bold text-white">{a.name}</h3>
                     <p className="mt-0.5 text-xs text-slate-400">{a.description}</p>
-                    <p className="mt-1 text-xs text-emerald-400">{a.blocks.length} blocks</p>
+                    <p className="mt-1 text-xs text-emerald-400">{a.blocks?.length ?? 0} blocks</p>
                   </div>
                   <button
                     onClick={() => onToggle(a)}

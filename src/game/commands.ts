@@ -2,6 +2,7 @@ import type { Engine } from './engine';
 import { GAME_MODE_LIST, type GameMode } from './gameModes';
 import { allBlocks, type BlockType } from './blocks';
 import { ENTITY_DEFS, type EntityType } from './entities';
+import { runCustomCommand } from './addons';
 
 export interface CommandResult {
   ok: boolean;
@@ -211,7 +212,12 @@ export function runCommand(input: string, engine: Engine): CommandResult {
   const name = parts[0].toLowerCase();
   const args = parts.slice(1);
   const cmd = commands.get(name);
-  if (!cmd) return { ok: false, message: `Unknown command: /${name}. Try /help` };
+  if (!cmd) {
+    // Try addon-provided custom commands
+    const custom = runCustomCommand(name, args);
+    if (custom !== null) return { ok: true, message: custom };
+    return { ok: false, message: `Unknown command: /${name}. Try /help` };
+  }
   try {
     return cmd.fn(args, engine);
   } catch (err: any) {
