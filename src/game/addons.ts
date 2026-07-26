@@ -1,6 +1,5 @@
-import { registerBlock, allBlocks, type BlockDef, type BlockType } from './blocks';
+import { registerBlock, allBlocks, type BlockDef, type BlockType, rebuildIndex } from './blocks';
 import { ENTITY_DEFS, type EntityDef, type EntityType } from './entities';
-import { runCommand } from './commands';
 import { loadAddonScript, createGameAPI, type GameAPI, type AddonScript } from './scriptApi';
 import type { Engine } from './engine';
 
@@ -342,8 +341,6 @@ export const BUILTIN_ADDONS: AddonManifest[] = [
     },
   },
 ];
-
-import { rebuildIndex } from './blocks';
 
 // Load built-in addons on import
 for (const a of BUILTIN_ADDONS) loadAddon(a);
